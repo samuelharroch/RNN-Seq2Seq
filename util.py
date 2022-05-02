@@ -9,8 +9,9 @@ import _pickle as pickle
 
 batch_size = 128  # Batch size for training.
 epochs = 20  # Number of epochs to train for.
-latent_dim = 1024#256  # Latent dimensionality of the encoding space.
+latent_dim = 1024   #256  # Latent dimensionality of the encoding space.
 num_samples = 145437  # Number of samples to train on.
+
 # Path to the data txt file on disk.
 data_path = 'fra.txt' # to replace by the actual dataset name
 encoder_path='encoder_modelPredTranslation.h5'
@@ -20,7 +21,7 @@ LOG_PATH="log"
 
 def prepareData(data_path):
     input_characters,target_characters,input_texts,target_texts=extractChar(data_path)
-    encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index,num_encoder_tokens,num_decoder_tokens,num_decoder_tokens,max_encoder_seq_length =encodingChar(input_characters,target_characters,input_texts,target_texts)
+    encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index,num_encoder_tokens,num_decoder_tokens,num_decoder_tokens,max_encoder_seq_length = encodingChar(input_characters,target_characters,input_texts,target_texts)
     
     return encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index,input_texts,target_texts,num_encoder_tokens,num_decoder_tokens,num_decoder_tokens,max_encoder_seq_length
 
@@ -102,7 +103,8 @@ def encodingChar(input_characters,target_characters,input_texts,target_texts):
 
 
     return encoder_input_data, decoder_input_data, decoder_target_data, input_token_index, target_token_index,num_encoder_tokens,num_decoder_tokens,num_decoder_tokens,max_encoder_seq_length
-	
+
+
 def modelTranslation2(num_encoder_tokens,num_decoder_tokens):
 # We crete the model 1 encoder(gru) + 1 decode (gru) + 1 Dense layer + softmax
 
@@ -119,9 +121,17 @@ def modelTranslation2(num_encoder_tokens,num_decoder_tokens):
     model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
     
     return model,decoder_outputs,encoder_inputs,encoder_states,decoder_inputs,decoder_gru,decoder_dense
-	
+
+
 def modelTranslation(num_encoder_tokens,num_decoder_tokens):
-# We crete the model 1 encoder(lstm) + 1 decode (LSTM) + 1 Dense layer + softmax
+    '''
+
+    :param num_encoder_tokens:
+    :param num_decoder_tokens:
+    :return: BUILD THE NETWORK
+
+    # We crete the model 1 encoder(lstm) + 1 decode (LSTM) + 1 Dense layer + softmax
+    '''
 
     encoder_inputs = Input(shape=(None, num_encoder_tokens))
     encoder = LSTM(latent_dim, return_state=True)
@@ -139,20 +149,22 @@ def modelTranslation(num_encoder_tokens,num_decoder_tokens):
     
     return model,decoder_outputs,encoder_inputs,encoder_states,decoder_inputs,decoder_lstm,decoder_dense
 
+
 def trainSeq2Seq(model,encoder_input_data, decoder_input_data,decoder_target_data):
 # We load tensorboad
 # We train the model
-LOG_PATH="/output/log"
+    LOG_PATH="/output/log"
     
     tbCallBack = TensorBoard(log_dir=LOG_PATH, histogram_freq=0, write_graph=True, write_images=True)
     # Run training
     model.compile(optimizer='rmsprop', loss='categorical_crossentropy',metrics=['accuracy'])
-    model.fit([encoder_input_data, decoder_input_data], decoder_target_data,
+    model.fit(x=[encoder_input_data, decoder_input_data], y=decoder_target_data,
               batch_size=batch_size,
               epochs=epochs,
               validation_split=0.01,
               callbacks = [tbCallBack])
-    
+
+
 def generateInferenceModel(encoder_inputs, encoder_states,input_token_index,target_token_index,decoder_lstm,decoder_inputs,decoder_dense):
 # Once the model is trained, we connect the encoder/decoder and we create a new model
 # Finally we save everything
@@ -182,35 +194,35 @@ def loadEncoderDecoderModel():
     decoder_model= load_model(decoder_path)
     return encoder_model,decoder_model
 
-def decode_sequence(input_seq,encoder_model,decoder_model,num_decoder_tokens,target_token_index,reverse_target_char_index):\
+
+def decode_sequence(input_seq, encoder_model,decoder_model,num_decoder_tokens,target_token_index,reverse_target_char_index):
 # We run the model and predict the translated sentence
 
-    # We encode the input
+    # We encode the input ( our C vector)
     states_value = encoder_model.predict(input_seq)
 
-    
+    # Y_0
     target_seq = np.zeros((1, 1, num_decoder_tokens))
-    
     target_seq[0, 0, target_token_index['\t']] = 1.
-
 
     stop_condition = False
     decoded_sentence = ''
+
     # We predict the output letter by letter 
     while not stop_condition:
         output_tokens, h, c = decoder_model.predict(
             [target_seq] + states_value)
 
-        # We translate the token in hamain language
+        # We translate the token in human language
         sampled_token_index = np.argmax(output_tokens[0, -1, :])
         sampled_char = reverse_target_char_index[sampled_token_index]
         decoded_sentence += sampled_char
 
-        # We check if it is the end of the string
+        # We check if it is the end of the sentence
         if (sampled_char == '\n' or
            len(decoded_sentence) > 500):
             stop_condition = True
-
+        # Y_t-1 of the next iteration
         target_seq = np.zeros((1, 1, num_decoder_tokens))
         target_seq[0, 0, sampled_token_index] = 1.
 
@@ -218,13 +230,36 @@ def decode_sequence(input_seq,encoder_model,decoder_model,num_decoder_tokens,tar
 
     return decoded_sentence
 
-def encodingSentenceToPredict(sentence,input_token_index,max_encoder_seq_length,num_encoder_tokens):
+
+def encodingSentenceToPredict(sentence, input_token_index, max_encoder_seq_length, num_encoder_tokens):
+    '''
+
+    :param sentence: the input sentence
+    :param input_token_index: dict of characters to index
+    :param max_encoder_seq_length:
+    :param num_encoder_tokens:
+    :return:
+    '''
+
     encoder_input_data = np.zeros((1, max_encoder_seq_length, num_encoder_tokens),dtype='float32')
     for t, char in enumerate(sentence):
         encoder_input_data[0, t, input_token_index[char]] = 1.
     return encoder_input_data
 
+
 def saveChar2encoding(filename,input_token_index,max_encoder_seq_length,num_encoder_tokens,reverse_target_char_index,num_decoder_tokens,target_token_index):
+    '''
+
+    :param filename:
+    :param input_token_index:
+    :param max_encoder_seq_length:
+    :param num_encoder_tokens:
+    :param reverse_target_char_index:
+    :param num_decoder_tokens:
+    :param target_token_index:
+    :return: serialize the previous parameters
+    '''
+
     f = open(filename, "wb")
     pickle.dump(input_token_index, f)
     pickle.dump(max_encoder_seq_length, f)
@@ -238,6 +273,12 @@ def saveChar2encoding(filename,input_token_index,max_encoder_seq_length,num_enco
     
 
 def getChar2encoding(filename):
+    '''
+
+    :param filename: objects file
+    :return: deserialized objects
+    '''
+
     f = open(filename, "rb")
     input_token_index = pickle.load(f)
     max_encoder_seq_length = pickle.load(f)
